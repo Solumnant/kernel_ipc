@@ -5,6 +5,19 @@
  */
 
 
+
+
+#include <errno.h>
+
+#include "mailbox.h"
+#include "systemcalls.h"
+#include "helpers.h"
+
+static mailbox mailList;
+LIST_HEAD_INIT(&mailbox.list);
+
+
+
 //creates a new empty mailbox with ID id, if it does not already exist,
 //and returns 0. The queue should be flagged for encryption if the enable_crypt
 //option is set to anything other than 0. If enable_crypt is set to zero, then
@@ -13,25 +26,21 @@
 //parameter is 0, then the messages should be stored/retrieved in FIFO order
 //(as a queue). If it is non-zero, then the messages should be stored
 //in LIFO order (as a stack).
-
-#include <errno.h>
-
-#include "mailbox.h"
-#include "systemcalls.h"
-#include "helpers.h"
-
-static mailbox* mailList;
-
-
-
-
 long create_mbox_421(unsigned long id, int enable_crypt, int lifo) {
     mailbox * myMailbox= kmalloc(sizeof(*mailbox), GFP_KERNEL);
+    if(myMailbox==NULL){
+        //something went wrong...
+        //no new mailbox...
+        return 1;
+    }
+
     myMailbox->encrypted=enable_crypt;
     myMailbox->id=id;
     myMailbox->islifo=lifo;
-    myMailbox->myMsgs
+    myMailbox->myMsgs;
+    //I think this initializes the linked list...
     INIT_LIST_HEAD(&mailList.list);
+    //I think this adds the new mailbox to the existing mailbox
     list_add(&mailList.list, &mailList.list)
 
 
