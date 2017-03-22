@@ -16,32 +16,38 @@
 
 #include <errno.h>
 
+#include "mailbox.h"
 #include "systemcalls.h"
 #include "helpers.h"
+
+static mailbox* mailList;
 
 
 
 
 long create_mbox_421(unsigned long id, int enable_crypt, int lifo) {
-    mailbox * myMailbox;
+    mailbox * myMailbox= kmalloc(sizeof(*mailbox), GFP_KERNEL);
     myMailbox->encrypted=enable_crypt;
     myMailbox->id=id;
     myMailbox->islifo=lifo;
     myMailbox->myMsgs
-    
+    INIT_LIST_HEAD(&mailList.list);
+    list_add(&mailList.list, &mailList.list)
+
+
 }
 
-//removes mailbox with ID id, if it is empty, and returns 0. If the mailbox is 
-//not empty, this system call should return an appropriate error and not 
+//removes mailbox with ID id, if it is empty, and returns 0. If the mailbox is
+//not empty, this system call should return an appropriate error and not
 //remove the mailbox.
 long remove_mbox_421(unsigned long id) {
-    
+
     //does the mailbox exist
     //TODO
     if(0){
-        
+
     }
-    
+
     //do we have more messages?
     if(count_msg_421(id)!=0){
         //pretty close to whats going on...
@@ -49,66 +55,66 @@ long remove_mbox_421(unsigned long id) {
     }
     else{
         //remove the mailbox
-        
+
         return 0;
     }
-    
-    
+
+
 
 }
 
 //returns the number of existing mailboxes.
 long count_mbox_421(void){
-    
+
 }
 
 // returns a list of up to k mailbox IDs in the user-space variable mbxes.
-//It returns the number of IDs written successfully to mbxes on success and an 
+//It returns the number of IDs written successfully to mbxes on success and an
 //appropriate error code on failure.
 long list_mbox_421(unsigned long *mbxes, long k){
-    
+
 }
 
 // encrypts the message msg (if appropriate), adding it to the already existing
-//mailbox identified. Returns the number of bytes stored (which should be equal 
+//mailbox identified. Returns the number of bytes stored (which should be equal
 //to the message length n) on success, and an appropriate error code on failure.
-//Messages with negative lengths shall be rejected as invalid and cause an 
+//Messages with negative lengths shall be rejected as invalid and cause an
 //appropriate error to be returned.
 long send_msg_421(unsigned long id, unsigned char *msg, long n,
         unsigned long key){
-    
+
 }
 
 
 //copies up to n characters from the next message in the mailbox id to the
 //user-space buffer msg, decrypting with the specified key (if appropriate),
 //and removes the entire message from the mailbox (even if only part of the
-//message is copied out). Returns the number of bytes successfully copied 
+//message is copied out). Returns the number of bytes successfully copied
 //(which should be the minimum of the length of the message that is stored and
 //n) on success or an appropriate error code on failure.
-long recv_msg_421(unsigned long id, unsigned char *msg, long n, 
+long recv_msg_421(unsigned long id, unsigned char *msg, long n,
         unsigned long key){
-    
+
 }
 
 //performs the same operation as recv_msg_421() without removing the message
 //from the mailbox.
 long peek_msg_421(unsigned long id, unsigned char *msg, long n,
         unsigned long key){
-    
+
 }
 
 
 //returns the number of messages in the mailbox id on success or an appropriate
 //error code on failure.
 long count_msg_421(unsigned long id){
-    
+
 }
 
 //returns the lenth of the next message that would be returned by calling
 //recv_msg_421() with the same id value (that is the number of bytes in the next
-//message in the mailbox). If there are no messages in the mailbox, this should 
+//message in the mailbox). If there are no messages in the mailbox, this should
 //return an appropriate error value.
 long len_msg_421(unsigned long id){
-    
+
 }

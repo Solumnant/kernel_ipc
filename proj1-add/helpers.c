@@ -10,16 +10,19 @@
 #include "mailbox.h"
 
 mailbox * getMailbox(unsigned long id){
-    
-    
-    
-    
+
+
+    while()
+
+
     //if mailbox doesn't exist
     return NULL;
-    
-    
+
+
+
+
 }
 
 int mailboxExists(unsigned long id){
-    
+
 }

@@ -4,7 +4,7 @@
  * and open the template in the editor.
  */
 
-/* 
+/*
  * File:   mailbox.h
  * Author: Ben Kittner
  *
@@ -17,33 +17,41 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-    
-#include <linux/list.h>    
-    
-    typedef struct linkedMsg{
+
+#include <linux/list.h>
+
+    typedef struct msgList{
         //from https://isis.poly.edu/kulesh/stuff/src/klist/
+        //makes message into a list
         struct list_head list;
         char* msg;
+
+
+
     };
 
-    
+
+
 
 typedef struct mailbox{
+    //makes mailboxes into a list
+    struct list_head list;
+
     //id for mailbox
     int id;
     //is it encrypted?
     int encrypted;
     //the message
-    
+
     //is it fifo or not?
     int islifo;
-    
+
     //contains the list of messages
-    linkedMsg myMsgs;  
-        
+    msgList myMsgs;
+
 };
 
-mailbox test;
+
 
 
 
