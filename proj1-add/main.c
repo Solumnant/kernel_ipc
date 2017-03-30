@@ -13,11 +13,22 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include "systemcalls.h"
 
 /*
  * 
  */
 int main(int argc, char** argv) {
+    
+    // test encrypt
+    long key=723942;
+    unsigned char msg[]= "please work with this string";
+    printf(msg);
+    encryption(msg, strlen(msg), key);
+    printf(msg);
+    encryption(msg, strlen(msg), key);
+    printf(msg);
 
     return (EXIT_SUCCESS);
 }

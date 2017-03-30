@@ -18,17 +18,20 @@
 extern "C" {
 #endif
 
-#include "list.h"
-    //#include <linux/list.h>
-#include <pthread.h>
+//#include "list.h"
+#include <linux/list.h>
+#include </asm/spinlock.h>
+//#include <pthread.h>
 
     typedef struct msgList {
         //from https://isis.poly.edu/kulesh/stuff/src/klist/
         //makes message into a list
         struct list_head list;
-        char* msg;
+        unsigned char* msg;
         long msgLen;
-        pthread_mutex_t mutexMail;
+        //don't need this, only edit inside mailbox is the msglist 
+        //and num messages anyhow, and they're practically both the same thing
+        //pthread_rwlock_t rw_Msg;
     }msgList;
     
     
@@ -52,7 +55,7 @@ extern "C" {
         unsigned long numMessages;
 
 
-        pthread_mutex_t mutexMail;
+        rwlock_t rw_Mail;
 
     }mailbox;
     

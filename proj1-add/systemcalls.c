@@ -6,318 +6,625 @@
 
 
 
+#ifndef SYSTEMCALLS_H
+#define SYSTEMCALLS_H
 
-#include <errno.h>
-#include <stdlib.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-//#include "mailbox_containers.h"
+#include <linux/cred.h>
+    
+#include <uapi/asm-generic/errno.h>
+//#include <stdlib.h>
+//#include <stdbool.h>
+//#include <iso646.h>
+#include <linux/string.h>    
+    
+//#include "string.h"
+
+
+    //#include "mailbox_containers.h"
 #include "mailbox.h"
-#include "systemcalls.h"
-#include "helpers.h"
+//#include "systemcalls.h"
+//#include "helpers.h"
 
 
 
 
 
 
-static LIST_HEAD(mailList);
-static long numBoxes=0;
+    static LIST_HEAD(mailList);
+    static long numBoxes = 0;
+    static rwlock_t rw_list = PTHREAD_RWLOCK_INITIALIZER;
 
+    //returns 0 on success, error on failure
+    //places new msg into msg. use for encryption and unencryption
 
-
-
-//creates a new empty mailbox with ID id, if it does not already exist,
-//and returns 0. The queue should be flagged for encryption if the enable_crypt
-//option is set to anything other than 0. If enable_crypt is set to zero, then
-//the key parameter in any functions including it should be ignored. The lifo
-//parameter controls what direction the messages are retrieved in. If this
-//parameter is 0, then the messages should be stored/retrieved in FIFO order
-//(as a queue). If it is non-zero, then the messages should be stored
-//in LIFO order (as a stack).
-
-long create_mbox_421(unsigned long id, int enable_crypt, int lifo) {
-    //TODO LOCK
-    mailbox * aMailbox;
-    //does the id already exist?
-
-     
-    list_for_each_entry(aMailbox, &mailList, list) {
-        if (aMailbox->id == id) {
-            //a mailbox with said id exists already, f-off
-            return EADDRINUSE;
+    long encryption(unsigned char* msg, long msgLen, long key) {
+        //getting the padding
+        int padding;
+        padding = msgLen % 4;
+        padding = 4 - padding;
+        char* outmsg = malloc((msgLen) * sizeof (unsigned char));
+        if (outmsg == NULL) {
+            return ENOMEM;
         }
+        memcpy(outmsg, msg, msgLen * sizeof (unsigned char));
+
+        unsigned char * cKey = (unsigned char *) &key;
+        long i = 0;
+        for (i = 0; i < msgLen; i++) {
+            outmsg[i] = outmsg[i]^cKey[i % 4];
+        }
+
+        outmsg = realloc(outmsg, msgLen * sizeof (unsigned char));
+
+        if (outmsg == NULL) {
+            //wtf
+            return ENOMEM;
+        }
+        memcpy(msg, outmsg, msgLen);
+        free(outmsg);
+
+        return 0;
+
     }
 
-    mailbox * myMailbox;
+    //some helpers to save autocomplete time
+    //locks and unlocks highest tier struct
 
-    myMailbox = malloc(sizeof(mailbox));
-    if (myMailbox == NULL) {
-        //something went wrong...
-        //no new mailbox...
-        return ENOMEM;
+    //locks the upper level list for reading
+
+    void lockListRead() {
+        pthread_rwlock_rdlock(&rw_list);
+    }
+    //locks the upper level list for writing
+
+    void lockListWrite() {
+        pthread_rwlock_wrlock(&rw_list);
+    }
+    //releases upper level lock from whatever I was using it as
+
+    void unlockList() {
+        pthread_rwlock_unlock(&rw_list);
     }
 
-    myMailbox->encrypted = enable_crypt;
-    myMailbox->id = id;
-    myMailbox->islifo = lifo;
-    //init the msglist
-    INIT_LIST_HEAD(&myMailbox->myMsgs);
-    
-    //I think this initializes the linked list...
-    INIT_LIST_HEAD(&myMailbox->list);
-    //I think this adds the new mailbox to the existing mailbox
-    list_add(&myMailbox->list, &mailList);
-    numBoxes++;
-    
-    return 0;
+    //use this to lock for reading something from a mailbox
+
+    void lockRead(mailbox * myBox) {
+        pthread_rwlock_rdlock(&myBox->rw_Mail);
+    }
+    //use this to lock for writing something to a mailbox
+
+    void lockWrite(mailbox * myBox) {
+        pthread_rwlock_wrlock(&myBox->rw_Mail);
+    }
+    //use this to unlock a mailbox after r/w
+
+    void unlock(mailbox * myBox) {
+        pthread_rwlock_unlock(&myBox->rw_Mail);
+    }
 
 
-}
 
-//removes mailbox with ID id, if it is empty, and returns 0. If the mailbox is
-//not empty, this system call should return an appropriate error and not
-//remove the mailbox.
 
-long remove_mbox_421(unsigned long id) {
-    //TODO LOCK
+    //creates a new empty mailbox with ID id, if it does not already exist,
+    //and returns 0. The queue should be flagged for encryption if the enable_crypt
+    //option is set to anything other than 0. If enable_crypt is set to zero, then
+    //the key parameter in any functions including it should be ignored. The lifo
+    //parameter controls what direction the messages are retrieved in. If this
+    //parameter is 0, then the messages should be stored/retrieved in FIFO order
+    //(as a queue). If it is non-zero, then the messages should be stored
+    //in LIFO order (as a stack).
 
-    //have I found the mailbox in question?
-    //int found = 0;
-    mailbox *aMailbox, * tempBox;
+    //needs to create object, then wlock and search. else takes time in lock to do 
+    //non sensitive stuff. free is cheap, right?
 
-    list_for_each_entry_safe(aMailbox, tempBox, &mailList, list) {
-        //is this the one?
-        if (aMailbox->id == id) {
-            //do we have more messages?            
-            if (list_empty(&aMailbox->myMsgs) ) {
+    long create_mbox_421(unsigned long id, int enable_crypt, int lifo) {
+        if (current_uid() != 0) {
+            return EPERM;
+        }
+
+        //creating it now so I don't take time from the lock
+        mailbox * myMailbox;
+
+        myMailbox = malloc(sizeof (mailbox));
+        if (myMailbox == NULL) {
+            //something went wrong...
+            //no new mailbox...
+            return ENOMEM;
+        }
+
+        myMailbox->numMessages = 0;
+        myMailbox->encrypted = enable_crypt;
+        myMailbox->id = id;
+        myMailbox->islifo = lifo;
+        //init the msglist
+        INIT_LIST_HEAD(&myMailbox->myMsgs);
+
+        //I think this initializes the linked for more msgs...
+        INIT_LIST_HEAD(&myMailbox->list);
+
+        myMailbox->rw_Mail = PTHREAD_RWLOCK_INITIALIZER;
+
+
+
+        //*************lock*************
+        mailbox * aMailbox;
+        //does the id already exist?
+
+        //reading the list
+        lockListWrite();
+
+        list_for_each_entry(aMailbox, &mailList, list) {
+            if (aMailbox->id == id) {
+                unlockList();
+                //it exists, destroy what I made
+                free(myMailbox);
+                //a mailbox with said id exists already, f-off
                 return EADDRINUSE;
             }
-            //no more msg
-            else {
-                //remove the mailbox
-                list_del(&aMailbox->list);
-                free(aMailbox);
-                numBoxes--;
+        }
+        //now need to commit work
+
+        //I think this adds the new mailbox to the existing mailbox
+        list_add(&myMailbox->list, &mailList);
+        numBoxes++;
+
+        //*********************unlock*******
+        unlockList();
+        return 0;
+
+
+    }
+
+    //removes mailbox with ID id, if it is empty, and returns 0. If the mailbox is
+    //not empty, this system call should return an appropriate error and not
+    //remove the mailbox.
+
+    long remove_mbox_421(unsigned long id) {
+        if (current_uid() != 0) {
+            return EPERM;
+        }
+
+
+        //have I found the mailbox in question?
+        //int found = 0;
+        mailbox *aMailbox, * tempBox;
+
+
+        lockListWrite(); //access and delete
+
+        list_for_each_entry_safe(aMailbox, tempBox, &mailList, list) {
+            //is this the one?
+            if (aMailbox->id == id) {
+                lockWrite(aMailbox);
+                //do we have more messages?            
+                if (aMailbox->numMessages > 0) {
+                    //don't do anything: it has stuff in it
+                    unlock(aMailbox);
+                    unlockList();
+                    return EBADSLT;
+                }//no more msg
+                else {
+                    //remove the mailbox
+                    list_del(&aMailbox->list);
+                    free(aMailbox);
+                    numBoxes--;
+
+                    //don't need to unlock the mailbox
+                    //cause it doesn't exist anymore
+                    unlockList();
+                    return 0;
+                }
+            }
+        }
+
+        unlockList();
+        //mailbox doesn't exist
+        return EADDRNOTAVAIL;
+
+    }
+
+    //returns the number of existing mailboxes. easiest thing ever
+    //going to lock it for good practice: if it's writing it might not be accurate
+    //though there isn't really a promise it could ever be accurate in multithread
+
+    long count_mbox_421(void) {
+        lockListRead();
+        long tempNum = numBoxes;
+        unlockList();
+        return tempNum;
+
+    }
+
+    // returns a list of up to k mailbox IDs in the user-space variable mbxes.
+    //It returns the number of IDs written successfully to mbxes on success and an
+    //appropriate error code on failure.
+
+    //TODO *-*-*-*-*-*-*-*-*-*-*- malloc? pointers changing? 
+
+    long list_mbox_421(unsigned long *mbxes, long k) {
+        if (mbxes == NULL) {
+            //you passed a null pointer, fuck off
+            return EFAULT;
+        }
+
+        unsigned long * tmpMbxes = malloc(k * sizeof (unsigned long));
+        if (tmpMbxes == NULL) {
+            return ENOMEM;
+        }
+
+        long count = 0;
+        mailbox * aMailbox;
+        lockListRead();
+
+        list_for_each_entry(aMailbox, &mailList, list) {
+            //don't need to lock the mailboxes themselves cause they can't 
+            //add or remove mailboxes
+
+            tmpMbxes[count] = aMailbox->id;
+            count++;
+            //not going to think about counting this and being off by one,
+            //wastes at most 3 spaces, nothing considering the buffer
+            //if(count-3>=buffer){
+            //  buffer*=2;
+            //mbxes=realloc(mbxes, buffer* sizeof(unsigned long));
+            //}
+        }
+        unlockList();
+
+        //TODO:copy my list to user space
+
+        long copyRtrn = copy_to_user(mbxes, tmpMbxes, count);
+        //some problem
+        if (copyRtrn != 0) {
+            free(tmpMbxes);
+            return EFAULT;
+        }
+
+
+
+
+
+        free(tmpMbxes); //done with my temp var, so delete it    
+        return count;
+    }
+
+    // encrypts the message msg (if appropriate), adding it to the already existing
+    //mailbox identified. Returns the number of bytes stored (which should be equal
+    //to the message length n) on success, and an appropriate error code on failure.
+    //Messages with negative lengths shall be rejected as invalid and cause an
+    //appropriate error to be returned.
+
+    //messages of length 0 are also invalid in my implementation
+
+    long send_msg_421(unsigned long id, unsigned char *msg, long n,
+            unsigned long key) {
+
+
+
+        unsigned char* kMsg;
+
+        //todo: get msg to kmsg and testing. assumed ok at kmsg
+
+
+        kMsg = malloc(n * (sizeof (unsigned char)));
+        if (kMsg == NULL) {
+            //free(kMsg);
+            return ENOMEM;
+        }
+        msgList * myMsglist = malloc(sizeof (msgList));
+        if (myMsglist == NULL) {
+            free(kMsg);
+            return ENOMEM;
+        }
+
+        long copyRtrn = copy_from_user(kMsg, msg, n);
+        //some problem
+        if (copyRtrn != 0) {
+            free(kMsg);
+            free(myMsglist);
+            return EFAULT;
+        }
+
+
+
+        myMsglist->msg = kMsg;
+        myMsglist->msgLen = n;
+        INIT_LIST_HEAD(&myMsglist->list);
+
+
+        if (n < 0) {
+            return EBADMSG;
+        }
+        //is msg null? 
+        if (msg == NULL) {
+            return EFAULT;
+        }
+
+        mailbox * aMailbox;
+        //first find
+
+        lockListRead();
+
+        list_for_each_entry(aMailbox, &mailList, list) {
+            //this means found
+            if (aMailbox->id == id) {
+
+                //sending message now
+                lockWrite(aMailbox);
+                if (aMailbox->encrypted) {
+                    long returnVar;
+                    if (returnVar = encryption(kMsg, n, key)) {
+                        //ran out of memory to encrypt
+                        return returnVar;
+                    }
+
+                }
+
+                //treat as lifo
+                if (aMailbox->islifo) {
+                    list_add(&myMsglist->list, &aMailbox->myMsgs);
+                } else {//its fifo
+                    list_add_tail(&myMsglist->list, &aMailbox->myMsgs);
+                }
+                aMailbox->numMessages++;
+
+                //found and all is right.
+                unlock(aMailbox);
+                unlockList();
                 return 0;
             }
         }
+
+
+        //didn't find
+        free(kMsg);
+        free(myMsglist);
+        unlockList();
+        //if not exists throw error    
+        return EADDRNOTAVAIL;
+
     }
 
-    //mailbox doesn't exist
-    return EADDRNOTAVAIL;
 
-}
+    //copies up to n characters from the next message in the mailbox id to the
+    //user-space buffer msg, decrypting with the specified key (if appropriate),
+    //and removes the entire message from the mailbox (even if only part of the
+    //message is copied out). Returns the number of bytes successfully copied
+    //(which should be the minimum of the length of the message that is stored and
+    //n) on success or an appropriate error code on failure.
 
-//returns the number of existing mailboxes.
-
-long count_mbox_421(void) {
-    return numBoxes;
-
-}
-
-// returns a list of up to k mailbox IDs in the user-space variable mbxes.
-//It returns the number of IDs written successfully to mbxes on success and an
-//appropriate error code on failure.
-
-//TODO *-*-*-*-*-*-*-*-*-*-*- malloc? pointers changing? 
-long list_mbox_421(unsigned long *mbxes, long k) {
-    if(mbxes==NULL){
-        //you passed a null pointer, fuck off
-        return EINVAL;
-    }
-    
-    unsigned long tmpMbxes=malloc(k*sizeof(unsigned long));
-    if(tmpMbxes==NULL){
-        return ENOMEM;
-    }
-    
-    long count=0;
-    mailbox * aMailbox;
-    list_for_each_entry(aMailbox, &mailList, list){
-        tmpMbxes[count]=aMailbox->id;
-        count++;
-        //not going to think about counting this and being off by one,
-        //wastes at most 3 spaces, nothing considering the buffer
-        //if(count-3>=buffer){
-          //  buffer*=2;
-            //mbxes=realloc(mbxes, buffer* sizeof(unsigned long));
-        //}
-    }
-    
-    //TODO:copy my list to user space
-    
-    
-    return count;
-}
-
-// encrypts the message msg (if appropriate), adding it to the already existing
-//mailbox identified. Returns the number of bytes stored (which should be equal
-//to the message length n) on success, and an appropriate error code on failure.
-//Messages with negative lengths shall be rejected as invalid and cause an
-//appropriate error to be returned.
-
-long send_msg_421(unsigned long id, unsigned char *msg, long n,
-        unsigned long key) {
-    //is msg null? 
-    if(msg==NULL){
-        return EINVAL;
-    }
-    
-    
-    mailbox * aMailbox;
-    //first find
-    
-    list_for_each_entry(aMailbox, &mailList, list) {
-        if (aMailbox->id == id) {
-            
-            //TODO: we can put the msg into a container now,
-            //not going to waste memory if the mailbox doesn't exist...
-            
-            //treat as lifo
-            if(aMailbox->islifo){
-                
-            }
-            else{//its fifo
-                
-            }
-            //found and all is right.
-            return 0;
+    long recv_msg_421(unsigned long id, unsigned char *msg, long n,
+            unsigned long key) {
+        if (n < 0) {
+            return EBADMSG;
         }
-    }
-    
-    
-    //if not exists throw error    
-    return EADDRNOTAVAIL;
 
-}
-
-
-//copies up to n characters from the next message in the mailbox id to the
-//user-space buffer msg, decrypting with the specified key (if appropriate),
-//and removes the entire message from the mailbox (even if only part of the
-//message is copied out). Returns the number of bytes successfully copied
-//(which should be the minimum of the length of the message that is stored and
-//n) on success or an appropriate error code on failure.
-
-long recv_msg_421(unsigned long id, unsigned char *msg, long n,
-        unsigned long key) {
-    //is msg null? 
-    if(msg==NULL){
-        return EINVAL;
-    }
-    
-    
-    mailbox * aMailbox;
-    //first find
-    
-    list_for_each_entry(aMailbox, &mailList, list) {
-        if (aMailbox->id == id) {
-            
-            //treat as lifo
-            if(aMailbox->islifo){
-                
-            }
-            else{//its fifo
-                
-            }
-            //found and all is right.
-            return 0;
+        //is msg null? 
+        if (msg == NULL) {
+            return EFAULT;
         }
-    }
-    
-    
-    //if not exists throw error    
-    return EADDRNOTAVAIL;
-    
-    
 
-}
+        long retLen;
 
-//performs the same operation as recv_msg_421() without removing the message
-//from the mailbox.
 
-long peek_msg_421(unsigned long id, unsigned char *msg, long n,
-        unsigned long key) {
+        mailbox * aMailbox;
+        //first find
 
-    //is msg null? 
-    if(msg==NULL){
-        return EINVAL;
-    }
-    
-    
-    mailbox * aMailbox;
-    //first find
-    
-    list_for_each_entry(aMailbox, &mailList, list) {
-        if (aMailbox->id == id) {
-            
-            //treat as lifo
-            if(aMailbox->islifo){
-                
+        lockListRead(); //I'm only reading at this level
+
+        list_for_each_entry(aMailbox, &mailList, list) {
+            if (aMailbox->id == id) {
+                lockWrite(aMailbox);
+
+                //do we have msg to get?
+                if (aMailbox->numMessages == 0) {
+                    //no msg
+                    unlock(aMailbox);
+                    unlockList();
+                    //dne
+                    return EEXIST;
+                }
+
+                msgList* msgStruct = list_first_entry(&aMailbox->myMsgs, msgList, list);
+                unsigned char * tmpMsg = msgStruct->msg;
+                //which is larger, request or msg?
+
+
+                if (msgStruct->msgLen > n) {
+                    retLen = n;
+                } else {
+                    retLen = msgStruct->msgLen;
+                }
+
+
+
+                //only do encryption up to what is needed
+                encryption(tmpMsg, retLen, key);
+
+
+
+                //TODO copy from kernel to userspace
+                long copyRtrn = copy_to_user(msg, tmpMsg, n);
+                //some problem
+                if (copyRtrn != 0) {
+                    unlock(aMailbox);
+                    unlockList();
+
+                    return EFAULT;
+                }
+
+
+
+                //found and all is right: cleanup'
+                aMailbox->numMessages--;
+                list_del(&msgStruct->list);
+                free(tmpMsg);
+                free(msgStruct);
+                unlock(aMailbox);
+                unlockList();
+                //todo: return num copied
+                return retLen;
             }
-            else{//its fifo
-                
-            }
-            //found and all is right.
-            return 0;
         }
+
+
+        unlockList();
+        //if not exists throw error    
+        return EADDRNOTAVAIL;
+
+
+
     }
-    
-    
-    //if not exists throw error    
-    return EADDRNOTAVAIL;
-}
 
+    //performs the same operation as recv_msg_421() without removing the message
+    //from the mailbox.
 
-//returns the number of messages in the mailbox id on success or an appropriate
-//error code on failure.
+    long peek_msg_421(unsigned long id, unsigned char *msg, long n,
+            unsigned long key) {
 
-long count_msg_421(unsigned long id) {
-    mailbox *aMailbox;
-    
-    list_for_each_entry(aMailbox, &mailList, list) {
-        if (aMailbox->id == id) {
-            
-            
-            //found and all is right.
-            return mailbox.numMessages;
+        if (n < 0) {
+            return EBADMSG;
         }
-    }
-    
-    return EADDRNOTAVAIL;
 
-}
-
-//returns the lenth of the next message that would be returned by calling
-//recv_msg_421() with the same id value (that is the number of bytes in the next
-//message in the mailbox). If there are no messages in the mailbox, this should
-//return an appropriate error value.
-
-long len_msg_421(unsigned long id) {   
-    
-    
-    mailbox * aMailbox;
-    //first find
-    
-    list_for_each_entry(aMailbox, &mailList, list) {
-        if (aMailbox->id == id) {
-            
-            //treat as lifo
-            if(aMailbox->islifo){
-                
-            }
-            else{//its fifo
-                
-            }
-            //found and all is right.
-            return 0;
+        //is msg null? 
+        if (msg == NULL) {
+            return EFAULT;
         }
-    }
-    
-    
-    //if not exists throw error    
-    return EADDRNOTAVAIL;
 
+        long retLen;
+
+
+        mailbox * aMailbox;
+        //first find
+        lockListRead(); //only reading at this level
+
+        list_for_each_entry(aMailbox, &mailList, list) {
+            if (aMailbox->id == id) {
+
+                lockWrite(aMailbox);
+
+                //do we have msg to get?
+                if (aMailbox->numMessages == 0) {
+                    unlock(aMailbox);
+                    unlockList();
+                    //dne
+                    return EEXIST;
+                }
+
+                msgList* msgStruct = list_first_entry(&aMailbox->myMsgs, msgList, list);
+                unsigned char * tmpMsg = msgStruct->msg;
+
+                //which is larger, request or msg?
+
+
+                if (msgStruct->msgLen > n) {
+                    retLen = n;
+                } else {
+                    retLen = msgStruct->msgLen;
+                }
+
+
+
+                //only do encryption up to what is needed
+                encryption(tmpMsg, retLen, key);
+                //TODO copy from kernel to userspace
+
+                long copyRtrn = copy_to_user(msg, tmpMsg, n);
+                //some problem
+                if (copyRtrn != 0) {
+                    unlock(aMailbox);
+                    unlockList();
+
+                    return EFAULT;
+                }
+
+
+                //found and all is right.
+                unlock(aMailbox);
+                unlockList();
+                return retLen;
+            }
+        }
+        unlockList();
+
+        //if not exists throw error    
+        return EADDRNOTAVAIL;
+    }
+
+
+    //returns the number of messages in the mailbox id on success or an appropriate
+    //error code on failure.
+
+    long count_msg_421(unsigned long id) {
+        mailbox *aMailbox;
+        lockListRead();
+
+        list_for_each_entry(aMailbox, &mailList, list) {
+            if (aMailbox->id == id) {
+                lockRead(aMailbox);
+                long numMessages = aMailbox->numMessages;
+
+                //found and all is right.
+                unlock(aMailbox);
+                unlockList();
+                return numMessages;
+            }
+        }
+        unlockList();
+        return EADDRNOTAVAIL;
+
+    }
+
+    //returns the lenth of the next message that would be returned by calling
+    //recv_msg_421() with the same id value (that is the number of bytes in the next
+    //message in the mailbox). If there are no messages in the mailbox, this should
+    //return an appropriate error value.
+
+    long len_msg_421(unsigned long id) {
+
+        long msgLen;
+
+        mailbox * aMailbox;
+        msgList * tempMsglist;
+        //first find
+        lockListRead();
+
+        list_for_each_entry(aMailbox, &mailList, list) {
+            //found mailbox
+            if (aMailbox->id == id) {
+                lockRead(aMailbox);
+                //do we have messages?
+                if (aMailbox->numMessages == 0) {
+                    //no, invalid, no messeges to know the size of
+                    unlock(aMailbox);
+                    unlockList();
+                    return EEXIST;
+                }
+                //we have a message, put it's length into a return var
+                tempMsglist = list_first_entry(&aMailbox->myMsgs, msgList, list);
+                msgLen = tempMsglist->msgLen;
+
+                //found and all is right.
+                unlock(aMailbox);
+                unlockList();
+                return msgLen;
+            }
+        }
+
+
+        unlockList();
+        //if not exists throw error    
+        return EADDRNOTAVAIL;
+
+    }
+#ifdef __cplusplus
 }
+#endif
+
+#endif /* SYSTEMCALLS_H */
 
 
