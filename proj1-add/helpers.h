@@ -21,7 +21,7 @@ extern "C" {
 #include "mailbox.h"
     
     
-    mailbox getMailbox(unsigned long id);
+    //mailbox getMailbox(unsigned long id);
         
     
 

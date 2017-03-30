@@ -9,6 +9,8 @@
 #include "helpers.h"
 #include "mailbox.h"
 
+
+/*
 mailbox * getMailbox(unsigned long id){
 
 
@@ -26,3 +28,4 @@ mailbox * getMailbox(unsigned long id){
 int mailboxExists(unsigned long id){
 
 }
+*/
