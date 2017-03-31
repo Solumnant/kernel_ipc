@@ -6,12 +6,6 @@
 
 
 
-#ifndef SYSTEMCALLS_H
-#define SYSTEMCALLS_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #include <linux/cred.h>
     
@@ -36,7 +30,7 @@ extern "C" {
 
     static LIST_HEAD(mailList);
     static long numBoxes = 0;
-    static rwlock_t rw_list = PTHREAD_RWLOCK_INITIALIZER;
+    static rwlock_t rw_list = rwlock_init(&rw_list);
 
     //returns 0 on success, error on failure
     //places new msg into msg. use for encryption and unencryption
@@ -77,33 +71,39 @@ extern "C" {
     //locks the upper level list for reading
 
     void lockListRead() {
-        pthread_rwlock_rdlock(&rw_list);
+        read_lock(&rw_list);
     }
     //locks the upper level list for writing
 
     void lockListWrite() {
-        pthread_rwlock_wrlock(&rw_list);
+        write_lock(&rw_list);
     }
-    //releases upper level lock from whatever I was using it as
+    
 
-    void unlockList() {
-        pthread_rwlock_unlock(&rw_list);
+    void unlockListRead() {
+        read_unlock_bh(&rw_list);
+    }
+    void unlockListWrite(){
+        write_unlock_bh(&rw_list);
     }
 
     //use this to lock for reading something from a mailbox
 
     void lockRead(mailbox * myBox) {
-        pthread_rwlock_rdlock(&myBox->rw_Mail);
+        read_lock(&myBox->rw_Mail);
     }
     //use this to lock for writing something to a mailbox
 
     void lockWrite(mailbox * myBox) {
-        pthread_rwlock_wrlock(&myBox->rw_Mail);
+        write_lock(&myBox->rw_Mail);
     }
     //use this to unlock a mailbox after r/w
 
-    void unlock(mailbox * myBox) {
-        pthread_rwlock_unlock(&myBox->rw_Mail);
+    void unlockRead(mailbox * myBox) {
+        read_unlock_bh(&myBox->rw_Mail);
+    }
+    void unlockWrite(mailbox * myBox) {
+        write_unlock_bh(&myBox->rw_Mail);
     }
 
 
@@ -146,7 +146,7 @@ extern "C" {
         //I think this initializes the linked for more msgs...
         INIT_LIST_HEAD(&myMailbox->list);
 
-        myMailbox->rw_Mail = PTHREAD_RWLOCK_INITIALIZER;
+        myMailbox->rw_Mail = rwlock_init(&myMailbox->rw_Mail);
 
 
 
@@ -159,7 +159,7 @@ extern "C" {
 
         list_for_each_entry(aMailbox, &mailList, list) {
             if (aMailbox->id == id) {
-                unlockList();
+                unlockListWrite();
                 //it exists, destroy what I made
                 free(myMailbox);
                 //a mailbox with said id exists already, f-off
@@ -173,7 +173,7 @@ extern "C" {
         numBoxes++;
 
         //*********************unlock*******
-        unlockList();
+        unlockListWrite();
         return 0;
 
 
@@ -203,8 +203,8 @@ extern "C" {
                 //do we have more messages?            
                 if (aMailbox->numMessages > 0) {
                     //don't do anything: it has stuff in it
-                    unlock(aMailbox);
-                    unlockList();
+                    unlockWrite(aMailbox);
+                    unlockListWrite();
                     return EBADSLT;
                 }//no more msg
                 else {
@@ -215,13 +215,13 @@ extern "C" {
 
                     //don't need to unlock the mailbox
                     //cause it doesn't exist anymore
-                    unlockList();
+                    unlockListWrite();
                     return 0;
                 }
             }
         }
 
-        unlockList();
+        unlockListWrite();
         //mailbox doesn't exist
         return EADDRNOTAVAIL;
 
@@ -234,7 +234,7 @@ extern "C" {
     long count_mbox_421(void) {
         lockListRead();
         long tempNum = numBoxes;
-        unlockList();
+        unlockListRead();
         return tempNum;
 
     }
@@ -273,7 +273,7 @@ extern "C" {
             //mbxes=realloc(mbxes, buffer* sizeof(unsigned long));
             //}
         }
-        unlockList();
+        unlockListRead();
 
         //TODO:copy my list to user space
 
@@ -307,7 +307,7 @@ extern "C" {
 
         unsigned char* kMsg;
 
-        //todo: get msg to kmsg and testing. assumed ok at kmsg
+        
 
 
         kMsg = malloc(n * (sizeof (unsigned char)));
@@ -356,10 +356,10 @@ extern "C" {
                 //sending message now
                 lockWrite(aMailbox);
                 if (aMailbox->encrypted) {
-                    long returnVar;
-                    if (returnVar = encryption(kMsg, n, key)) {
+                    //long returnVar;
+                    if (ENOMEM==encryption(kMsg, n, key)) {
                         //ran out of memory to encrypt
-                        return returnVar;
+                        return ENOMEM;
                     }
 
                 }
@@ -373,8 +373,8 @@ extern "C" {
                 aMailbox->numMessages++;
 
                 //found and all is right.
-                unlock(aMailbox);
-                unlockList();
+                unlockWrite(aMailbox);
+                unlockListRead();
                 return 0;
             }
         }
@@ -383,7 +383,7 @@ extern "C" {
         //didn't find
         free(kMsg);
         free(myMsglist);
-        unlockList();
+        unlockListRead();
         //if not exists throw error    
         return EADDRNOTAVAIL;
 
@@ -423,8 +423,8 @@ extern "C" {
                 //do we have msg to get?
                 if (aMailbox->numMessages == 0) {
                     //no msg
-                    unlock(aMailbox);
-                    unlockList();
+                    unlockWrite(aMailbox);
+                    unlockListRead();
                     //dne
                     return EEXIST;
                 }
@@ -451,8 +451,8 @@ extern "C" {
                 long copyRtrn = copy_to_user(msg, tmpMsg, n);
                 //some problem
                 if (copyRtrn != 0) {
-                    unlock(aMailbox);
-                    unlockList();
+                    unlockWrite(aMailbox);
+                    unlockListRead();
 
                     return EFAULT;
                 }
@@ -464,15 +464,15 @@ extern "C" {
                 list_del(&msgStruct->list);
                 free(tmpMsg);
                 free(msgStruct);
-                unlock(aMailbox);
-                unlockList();
+                unlockWrite(aMailbox);
+                unlockListRead();
                 //todo: return num copied
                 return retLen;
             }
         }
 
 
-        unlockList();
+        unlockListRead();
         //if not exists throw error    
         return EADDRNOTAVAIL;
 
@@ -509,8 +509,8 @@ extern "C" {
 
                 //do we have msg to get?
                 if (aMailbox->numMessages == 0) {
-                    unlock(aMailbox);
-                    unlockList();
+                    unlockWrite(aMailbox);
+                    unlockListRead();
                     //dne
                     return EEXIST;
                 }
@@ -536,20 +536,20 @@ extern "C" {
                 long copyRtrn = copy_to_user(msg, tmpMsg, n);
                 //some problem
                 if (copyRtrn != 0) {
-                    unlock(aMailbox);
-                    unlockList();
+                    unlockWrite(aMailbox);
+                    unlockListRead();
 
                     return EFAULT;
                 }
 
 
                 //found and all is right.
-                unlock(aMailbox);
-                unlockList();
+                unlockWrite(aMailbox);
+                unlockListRead();
                 return retLen;
             }
         }
-        unlockList();
+        unlockListRead();
 
         //if not exists throw error    
         return EADDRNOTAVAIL;
@@ -569,12 +569,12 @@ extern "C" {
                 long numMessages = aMailbox->numMessages;
 
                 //found and all is right.
-                unlock(aMailbox);
-                unlockList();
+                unlockWrite(aMailbox);
+                unlockListRead();
                 return numMessages;
             }
         }
-        unlockList();
+        unlockListRead();
         return EADDRNOTAVAIL;
 
     }
@@ -600,8 +600,8 @@ extern "C" {
                 //do we have messages?
                 if (aMailbox->numMessages == 0) {
                     //no, invalid, no messeges to know the size of
-                    unlock(aMailbox);
-                    unlockList();
+                    unlockWrite(aMailbox);
+                    unlockListRead();
                     return EEXIST;
                 }
                 //we have a message, put it's length into a return var
@@ -609,22 +609,18 @@ extern "C" {
                 msgLen = tempMsglist->msgLen;
 
                 //found and all is right.
-                unlock(aMailbox);
-                unlockList();
+                unlockWrite(aMailbox);
+                unlockListRead();
                 return msgLen;
             }
         }
 
 
-        unlockList();
+        unlockListRead();
         //if not exists throw error    
         return EADDRNOTAVAIL;
 
     }
-#ifdef __cplusplus
-}
-#endif
 
-#endif /* SYSTEMCALLS_H */
 
 
