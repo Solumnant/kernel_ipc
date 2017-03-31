@@ -20,7 +20,8 @@ extern "C" {
 
 //#include "list.h"
 #include <linux/list.h>
-#include </asm/spinlock.h>
+#include <linux/spinlock.h>
+//#include <linux/spinlock_types.h>
 //#include <pthread.h>
 
     typedef struct msgList {
