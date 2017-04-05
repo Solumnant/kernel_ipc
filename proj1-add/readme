@@ -1,3 +1,5 @@
+tested encrypt function seperately and it worked. it isn't a syscall so it's been guarded
+
 
 possible errors:
 

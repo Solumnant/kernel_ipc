@@ -33,7 +33,7 @@
 
 static LIST_HEAD(mailList);
 static long numBoxes = 0;
-static rwlock_t rw_list=__RW_LOCK_UNLOCKED(rw_list);
+static DEFINE_RWLOCK(rw_list);
 //rw_list=RW_LOCK_UNLOCKED;
 //rwlock_init();
 
@@ -75,11 +75,11 @@ void lockListWrite(void) {
 }
 
 void unlockListRead(void) {
-    read_unlock_bh(&rw_list);
+    read_unlock(&rw_list);
 }
 
 void unlockListWrite(void) {
-    write_unlock_bh(&rw_list);
+    write_unlock(&rw_list);
 }
 
 //use this to lock for reading something from a mailbox
@@ -95,11 +95,11 @@ void lockWrite(mailbox * myBox) {
 //use this to unlock a mailbox after r/w
 
 void unlockRead(mailbox * myBox) {
-    read_unlock_bh(&myBox->rw_Mail);
+    read_unlock(&myBox->rw_Mail);
 }
 
 void unlockWrite(mailbox * myBox) {
-    write_unlock_bh(&myBox->rw_Mail);
+    write_unlock(&myBox->rw_Mail);
 }
 
 
@@ -118,10 +118,11 @@ void unlockWrite(mailbox * myBox) {
 //non sensitive stuff. free is cheap, right?
 
 asmlinkage long sys_create_mbox_421(unsigned long id, int enable_crypt, int lifo) {
+    DEFINE_RWLOCK(rw_tmp);
     mailbox * aMailbox;
     mailbox * myMailbox;
     if (current_uid().val != 0) {
-        return EPERM;
+        return -EPERM;
     }
 
     //creating it now so I don't take time from the lock
@@ -131,7 +132,7 @@ asmlinkage long sys_create_mbox_421(unsigned long id, int enable_crypt, int lifo
     if (myMailbox == NULL) {
         //something went wrong...
         //no new mailbox...
-        return ENOMEM;
+        return -ENOMEM;
     }
 
     myMailbox->numMessages = 0;
@@ -144,7 +145,7 @@ asmlinkage long sys_create_mbox_421(unsigned long id, int enable_crypt, int lifo
     //I think this initializes the linked for more msgs...
     INIT_LIST_HEAD(&myMailbox->list);
 
-    myMailbox->rw_Mail = __RW_LOCK_UNLOCKED(myMailbox->rw_Mail);
+    myMailbox->rw_Mail = rw_tmp;
 
 
 
@@ -161,7 +162,7 @@ asmlinkage long sys_create_mbox_421(unsigned long id, int enable_crypt, int lifo
             //it exists, destroy what I made
             kfree(myMailbox);
             //a mailbox with said id exists already, f-off
-            return EADDRINUSE;
+            return -EADDRINUSE;
         }
     }
     //now need to commit work
@@ -184,7 +185,7 @@ asmlinkage long sys_create_mbox_421(unsigned long id, int enable_crypt, int lifo
 asmlinkage long sys_remove_mbox_421(unsigned long id) {
     mailbox *aMailbox, * tempBox;
     if (current_uid().val != 0) {
-        return EPERM;
+        return -EPERM;
     }
 
 
@@ -204,7 +205,7 @@ asmlinkage long sys_remove_mbox_421(unsigned long id) {
                 //don't do anything: it has stuff in it
                 unlockWrite(aMailbox);
                 unlockListWrite();
-                return EBADSLT;
+                return -EBADSLT;
             }//no more msg
             else {
                 //remove the mailbox
@@ -222,7 +223,7 @@ asmlinkage long sys_remove_mbox_421(unsigned long id) {
 
     unlockListWrite();
     //mailbox doesn't exist
-    return EADDRNOTAVAIL;
+    return -EADDRNOTAVAIL;
 
 }
 
@@ -255,12 +256,12 @@ asmlinkage long sys_list_mbox_421(unsigned long *mbxes, long k) {
 
     if (mbxes == NULL) {
         //you passed a null pointer, fuck off
-        return EFAULT;
+        return -EFAULT;
     }
 
     tmpMbxes = kmalloc(k * sizeof (unsigned long), GFP_KERNEL);
     if (tmpMbxes == NULL) {
-        return ENOMEM;
+        return -ENOMEM;
     }
 
 
@@ -289,7 +290,7 @@ asmlinkage long sys_list_mbox_421(unsigned long *mbxes, long k) {
     //some problem
     if (copyRtrn != 0) {
         kfree(tmpMbxes);
-        return EFAULT;
+        return -EFAULT;
     }
 
 
@@ -315,24 +316,24 @@ asmlinkage long sys_send_msg_421(unsigned long id, unsigned char *msg, long n,
 
 
     if (n < 0) {
-        return EBADMSG;
+        return -EBADMSG;
     }
     //is msg null? 
     if (msg == NULL) {
-        return EFAULT;
+        return -EFAULT;
     }
 
 
     kMsg = kmalloc(n * (sizeof (unsigned char)), GFP_KERNEL);
     if (kMsg == NULL) {
         //free(kMsg);
-        return ENOMEM;
+        return -ENOMEM;
     }
 
     myMsglist = kmalloc(sizeof (msgList), GFP_KERNEL);
     if (myMsglist == NULL) {
         kfree(kMsg);
-        return ENOMEM;
+        return -ENOMEM;
     }
 
 
@@ -341,7 +342,7 @@ asmlinkage long sys_send_msg_421(unsigned long id, unsigned char *msg, long n,
     if (copyRtrn != 0) {
         kfree(kMsg);
         kfree(myMsglist);
-        return EFAULT;
+        return -EFAULT;
     }
 
 
@@ -389,7 +390,7 @@ asmlinkage long sys_send_msg_421(unsigned long id, unsigned char *msg, long n,
     kfree(myMsglist);
     unlockListRead();
     //if not exists throw error    
-    return EADDRNOTAVAIL;
+    return -EADDRNOTAVAIL;
 
 }
 
@@ -410,12 +411,12 @@ asmlinkage long sys_recv_msg_421(unsigned long id, unsigned char *msg, long n,
     long retLen;
 
     if (n < 0) {
-        return EBADMSG;
+        return -EBADMSG;
     }
 
     //is msg null? 
     if (msg == NULL) {
-        return EFAULT;
+        return -EFAULT;
     }
 
 
@@ -436,7 +437,7 @@ asmlinkage long sys_recv_msg_421(unsigned long id, unsigned char *msg, long n,
                 unlockWrite(aMailbox);
                 unlockListRead();
                 //dne
-                return EEXIST;
+                return -EEXIST;
             }
 
 
@@ -467,7 +468,7 @@ asmlinkage long sys_recv_msg_421(unsigned long id, unsigned char *msg, long n,
                 unlockWrite(aMailbox);
                 unlockListRead();
 
-                return EFAULT;
+                return -EFAULT;
             }
 
 
@@ -505,12 +506,12 @@ asmlinkage long sys_peek_msg_421(unsigned long id, unsigned char *msg, long n,
     long retLen;
 
     if (n < 0) {
-        return EBADMSG;
+        return -EBADMSG;
     }
 
     //is msg null? 
     if (msg == NULL) {
-        return EFAULT;
+        return -EFAULT;
     }
 
 
@@ -528,7 +529,7 @@ asmlinkage long sys_peek_msg_421(unsigned long id, unsigned char *msg, long n,
                 unlockWrite(aMailbox);
                 unlockListRead();
                 //dne
-                return EEXIST;
+                return -EEXIST;
             }
 
 
@@ -558,7 +559,7 @@ asmlinkage long sys_peek_msg_421(unsigned long id, unsigned char *msg, long n,
                 unlockWrite(aMailbox);
                 unlockListRead();
 
-                return EFAULT;
+                return -EFAULT;
             }
 
 
@@ -571,7 +572,7 @@ asmlinkage long sys_peek_msg_421(unsigned long id, unsigned char *msg, long n,
     unlockListRead();
 
     //if not exists throw error    
-    return EADDRNOTAVAIL;
+    return -EADDRNOTAVAIL;
 }
 
 
@@ -596,7 +597,7 @@ asmlinkage long sys_count_msg_421(unsigned long id) {
         }
     }
     unlockListRead();
-    return EADDRNOTAVAIL;
+    return -EADDRNOTAVAIL;
 
 }
 
@@ -623,7 +624,7 @@ asmlinkage long sys_len_msg_421(unsigned long id) {
                 //no, invalid, no messeges to know the size of
                 unlockWrite(aMailbox);
                 unlockListRead();
-                return EEXIST;
+                return -EEXIST;
             }
             //we have a message, put it's length into a return var
             tempMsglist = list_first_entry(&aMailbox->myMsgs, msgList, list);
@@ -639,7 +640,7 @@ asmlinkage long sys_len_msg_421(unsigned long id) {
 
     unlockListRead();
     //if not exists throw error    
-    return EADDRNOTAVAIL;
+    return -EADDRNOTAVAIL;
 
 }
 
