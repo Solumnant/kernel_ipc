@@ -4,6 +4,8 @@ tested add, remove, and both counts with and without sudo to ensure correct beha
 
 used fork to test good behavior with locking
 
+I probably spent more time reading and rereading my functions at different implementation stages than I did testing: I read and reread all non-trivial functions at least 6-7 times for logic while they were in userspace, and I made sure I changed all functions properly.
+
 
 possible errors:
 
