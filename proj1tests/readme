@@ -1,0 +1,50 @@
+tested encrypt function seperately in userspace and it worked. it isn't a syscall so it's been guarded
+
+tested add, remove, and both counts with and without sudo to ensure correct behavior
+
+used fork to test good behavior with locking
+
+I probably spent more time reading and rereading my functions at different implementation stages than I did testing: I read and reread all non-trivial functions at least 6-7 times for logic while they were in userspace, and I made sure I changed all functions properly.
+
+
+possible errors:
+
+create_mbox_421
+EADDRINUSE=mailbox already exists
+ENOMEM= memory allocation failed along the way
+EPERM= not root
+
+remove_mbox_421
+EBADSLT=slot not empty, can't delete
+EADDRNOTAVAIL=mailbox doesn't exist
+EPERM= not root
+
+list_mbox_421
+EFAULT=invalid pointer for some reason
+ENOMEM= memory allocation failed along the way
+
+send_msg_421
+ENOMEM= memory allocation failed along the way
+EBADMSG= invalid msg size
+EFAULT=invalid pointer for some reason
+EADDRNOTAVAIL=mailbox doesn't exist
+
+recv_msg_421
+EBADMSG= invalid msg size
+EFAULT=invalid pointer for some reason
+EEXIST= No message in mailbox
+EADDRNOTAVAIL=mailbox doesn't exist
+
+peek_msg_421
+EBADMSG= invalid msg size
+EFAULT=invalid pointer for some reason
+EEXIST= No message in mailbox
+EADDRNOTAVAIL=mailbox doesn't exist
+
+count_msg_421
+EADDRNOTAVAIL=mailbox doesn't exist
+
+len_msg_421
+EEXIST= No message in mailbox
+EADDRNOTAVAIL=mailbox doesn't exist
+
