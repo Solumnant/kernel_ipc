@@ -2,7 +2,7 @@ tested encrypt function seperately and it worked. it isn't a syscall so it's bee
 
 tested add, remove, and both counts with and without sudo to ensure correct behavior
 
-used fork to test good behavior
+used fork to test good behavior with locking
 
 
 possible errors:
