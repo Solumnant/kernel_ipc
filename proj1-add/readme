@@ -1,4 +1,4 @@
-tested encrypt function seperately and it worked. it isn't a syscall so it's been guarded
+tested encrypt function seperately in userspace and it worked. it isn't a syscall so it's been guarded
 
 tested add, remove, and both counts with and without sudo to ensure correct behavior
 
