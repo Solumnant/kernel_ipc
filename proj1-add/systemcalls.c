@@ -488,7 +488,7 @@ asmlinkage long sys_recv_msg_421(unsigned long id, unsigned char *msg, long n,
 
     unlockListRead();
     //if not exists throw error    
-    return EADDRNOTAVAIL;
+    return -EADDRNOTAVAIL;
 
 
 
