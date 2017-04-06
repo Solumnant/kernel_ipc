@@ -82,20 +82,23 @@ int main(int argc, char** argv) {
 	//	fork();
 	//}
 
+	//6 is crypt
+
 	printf("%d %s\n",create_mbox_421(5,0,0), "create_mbox_421:5");
-	printf("%d %s\n",create_mbox_421(6,1,0), "create_mbox_421:6");
+	//printf("%d %s\n",create_mbox_421(6,1,0), "create_mbox_421:6");
 	
 	printf("%d %s\n",send_msg_421(5, string,3,0), "send_msg_421:5");
-	printf("%d %s\n",send_msg_421(5, string,3,69), "send_msg_421:5 bad");
+	//printf("%d %s\n",send_msg_421(5, string,3,69), "send_msg_421:5 bad");
 	printf("%d %s\n",count_mbox_421(), "count_mbox_421");
 	//printf("%d %s\n",count_mbox_421(), "count_mbox_421:5");
 	printf("%d %s\n",count_msg_421(5), "count_msg_421:5");
-	printf("%d %s\n",count_msg_421(6), "count_msg_421:6");
+	//printf("%d %s\n",count_msg_421(6), "count_msg_421:6");
 	printf("%d %s\n",recv_msg_421(5,reurn,3,0), "recv_msg_421:5");
-	printf("%d %s\n",peek_msg_421(6,reurn,3,69), "peek_msg_421:6");
-	printf("%d %s\n",peek_msg_421(6,reurn,666666666,69), "peek_msg_421:6 bad" );
+	printf("%d %s\n",count_msg_421(5), "count_msg_421:5");
+	//printf("%d %s\n",peek_msg_421(6,reurn,3,69), "peek_msg_421:6");
+	//printf("%d %s\n",peek_msg_421(6,reurn,666666666,69), "peek_msg_421:6 bad" );
 	printf("%d %s\n",remove_mbox_421(5), "remove_mbox_421:5");
-	printf("%d %s\n",remove_mbox_421(6), "remove_mbox_421:6");
+	//printf("%d %s\n",remove_mbox_421(6), "remove_mbox_421:6");
     
 
 
